@@ -74,6 +74,11 @@ pub fn main(init: std.process.Init) !void {
     session.delay_ctx = &connect_ctx;
     defer session.close();
 
+    if (run.subcommand == .script) {
+        try runScript(io, stdout, &session, gpa, run.subcommand.script.path, run.config.verbosity);
+        return;
+    }
+
     if (run.subcommand != .repl) {
         var cmd_buf: [512]u8 = undefined;
         const cmd = calle.cli.dispatch.commandString(run.subcommand, &cmd_buf) catch |err| {
@@ -160,6 +165,43 @@ fn readConfigFile(io: std.Io, gpa: std.mem.Allocator) !calle.cli.config_file.Par
         else => return err,
     };
     return calle.cli.config_file.parse(contents);
+}
+
+/// Runs each command in the script at `path`, stopping at the first
+/// failure (deliberately not "best effort" - a flashing pipeline where
+/// `reset halt` silently failed but `flash write` ran anyway would be
+/// worse than just stopping).
+fn runScript(
+    io: std.Io,
+    stdout: std.Io.File,
+    session: *calle.session.ReconnectingTclSession,
+    gpa: std.mem.Allocator,
+    path: []const u8,
+    verbosity: u8,
+) !void {
+    const contents = std.Io.Dir.cwd().readFileAlloc(io, path, gpa, .limited(1024 * 1024)) catch |err| {
+        std.log.err("could not read script file {s}: {t}", .{ path, err });
+        std.process.exit(1);
+    };
+    defer gpa.free(contents);
+
+    var it = calle.cli.script_file.LineIterator.init(contents);
+    var count: usize = 0;
+
+    while (it.next()) |cmd| {
+        count += 1;
+        const response = execLogged(io, stdout, session, gpa, cmd, verbosity) catch |err| {
+            std.log.err("script failed at command {d} (\"{s}\"): {t}", .{ count, cmd, err });
+            std.process.exit(1);
+        };
+        defer gpa.free(response);
+        try stdout.writeStreamingAll(io, response);
+        try stdout.writeStreamingAll(io, "\n");
+    }
+
+    if (verbosity >= 1) {
+        std.log.info("script completed: {d} command(s) run", .{count});
+    }
 }
 
 /// Connects (or reconnects) a TCP transport to a fixed host/port,

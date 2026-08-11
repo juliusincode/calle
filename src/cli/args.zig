@@ -109,6 +109,7 @@ pub const Subcommand = union(enum) {
     mem_read: MemRead,
     mem_write: MemWrite,
     mem_dump: MemDump,
+    script: struct { path: []const u8 },
     /// Escape hatch for anything without a typed subcommand yet - the
     /// argument is sent to OpenOCD verbatim. Needs shell quoting for
     /// multi-word commands: `calle raw "reset halt"`.
@@ -328,6 +329,11 @@ fn parseSubcommand(rest: []const []const u8) ParseError!Subcommand {
         return error.UnknownMemSubcommand;
     }
 
+    if (std.mem.eql(u8, name, "script")) {
+        if (rest.len < 2) return error.MissingSubcommandArgument;
+        return .{ .script = .{ .path = rest[1] } };
+    }
+
     if (std.mem.eql(u8, name, "raw")) {
         if (rest.len < 2) return error.MissingSubcommandArgument;
         return .{ .raw = rest[1] };
@@ -369,6 +375,8 @@ pub const usage_text =
     \\  mem dump <path> <addr> <size>
     \\                              dump memory to a file (on the OpenOCD host)
     \\  raw "<command>"            send a raw OpenOCD command (quote it!)
+    \\  script <path>              run each line of <path> as a command,
+    \\                              stop at the first failure
     \\
     \\Defaults: --host 127.0.0.1 --port 6666
     \\Overridable via CALLE_HOST / CALLE_PORT env vars; --host/--port
@@ -591,6 +599,15 @@ test "raw passes its single quoted argument through verbatim" {
 
 test "raw without an argument reports MissingSubcommandArgument" {
     try std.testing.expectError(error.MissingSubcommandArgument, parse(&.{ "calle", "raw" }, null, null));
+}
+
+test "script requires a path" {
+    const action = try parse(&.{ "calle", "script", "flash-and-verify.calle" }, null, null);
+    try std.testing.expectEqualStrings("flash-and-verify.calle", action.run.subcommand.script.path);
+}
+
+test "script without a path reports MissingSubcommandArgument" {
+    try std.testing.expectError(error.MissingSubcommandArgument, parse(&.{ "calle", "script" }, null, null));
 }
 
 test "an unknown top-level subcommand is rejected" {

@@ -25,6 +25,7 @@ pub const cli = struct {
     pub const dispatch = @import("cli/dispatch.zig");
     pub const config_file = @import("cli/config_file.zig");
     pub const line_reader = @import("cli/line_reader.zig");
+    pub const script_file = @import("cli/script_file.zig");
 
     test {
         // See the `refAllDecls is not recursive` note in commands.zig -

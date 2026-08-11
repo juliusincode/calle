@@ -4,13 +4,13 @@ A modular OpenOCD client written in Zig 0.16, built primarily around
 OpenOCD's Tcl-RPC interface (port 6666 by default).
 
 **Status:** builds and passes all tests against the real Zig 0.16.0
-compiler. `zig build test` (110/110, fully mock-based, no network
+compiler. `zig build test` (119/119, fully mock-based, no network
 required) and an end-to-end smoke test of `zig build run` against a
 fake OpenOCD server (real TCP connection, `targets` / `reset halt` over
 Tcl-RPC, REPL including `quit`) both pass.
 
 ```sh
-zig build test                                    # 110/110 green, no network needed
+zig build test                                    # 119/119 green, no network needed
 zig build run -- --host 127.0.0.1 --port 6666     # interactive REPL
 
 # typed subcommands, for scripts:
@@ -210,9 +210,22 @@ mem read <addr> [count]              read word(s) from memory
 mem write <addr> <value>             write a word to memory
 mem dump <path> <addr> <size>        dump memory to a file (on the OpenOCD host)
 raw "<command>"                      send a raw OpenOCD command (quote it!)
+script <path>                        run each line of <path> as a command,
+                                      stop at the first failure
 ```
 
 Addresses/values/lengths accept both hex (`0x08000000`) and decimal.
+
+A script file has one OpenOCD command per line; blank lines and lines
+starting with `#` are ignored:
+
+```
+# flash-and-verify.calle
+reset halt
+flash write_image erase firmware.bin 0x08000000
+verify_image firmware.bin
+reset run
+```
 
 `--host` and `--port` default to `127.0.0.1` and `6666` (OpenOCD's
 Tcl-RPC port), and can also be set via the `CALLE_HOST` / `CALLE_PORT`
@@ -342,6 +355,10 @@ that only show up with real bytes on a real socket - see
   stripping, EOF handling, multi-line sequences, and - the reason this
   module exists - a regression test that an oversized line is fully
   drained rather than leaking its remainder into the next line read
+- Script file parsing (`src/cli/script_file.zig`): blank lines and
+  comments skipped, whitespace trimmed, a file with no trailing
+  newline, a file of only comments/blanks, and a realistic
+  flash-and-verify script
 
 The allocator-backed path (`execAlloc` / `readResponseAlloc`) has also
 been smoke-tested against a fake OpenOCD server returning a ~9 KB
@@ -356,7 +373,11 @@ OpenOCD server, plus an unknown subcommand correctly prints usage and
 exits non-zero instead of trying to connect. Backoff was verified
 against a real socket too: a server down for 500ms produces two
 logged failed attempts with growing delays (`-v`) before the third
-attempt succeeds.
+attempt succeeds. Script mode was verified against a real socket for
+all four commands of a realistic flash-and-verify script, `-v`'s
+completion summary, a missing script file, and - the important
+one - that a mid-script failure genuinely stops execution rather than
+sending the remaining commands anyway.
 The config file's full precedence chain (file-only, CLI-over-file,
 file-over-env, missing file, malformed file) was verified end-to-end
 as well.

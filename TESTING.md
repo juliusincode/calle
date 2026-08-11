@@ -186,7 +186,37 @@ rm .calle.conf
 
 Clean up: `rm -rf /tmp/calle-test`.
 
-## 9. Reconnect + backoff
+## 9. Batch/scripting mode
+
+```sh
+cat > /tmp/flash-and-verify.calle <<'EOF'
+# flash-and-verify.calle
+reset halt
+flash write_image erase firmware.bin 0x08000000
+verify_image firmware.bin
+reset run
+EOF
+zig build run -- --host 127.0.0.1 --port 6666 script /tmp/flash-and-verify.calle
+```
+**Expected:** all four commands run in order; server log shows all
+four `received:` lines; exit code 0.
+
+```sh
+zig build run -- --host 127.0.0.1 --port 6666 script /tmp/does-not-exist.calle
+```
+**Expected:** clean error (`could not read script file ...
+FileNotFound`), exit code 1.
+
+To verify the "stops at first failure" behavior specifically, you need
+a server that fails partway through - `scripts/flaky_openocd.py`
+isn't quite shaped for this (it always succeeds on the first command),
+so this one's easiest to confirm by reading `runScript` in
+`src/main.zig` alongside its test coverage, or by temporarily editing
+`scripts/fake_openocd.py` to close the connection after N commands and
+confirming (via the server's log) that commands after the failure
+point never arrive.
+
+## 10. Reconnect + backoff
 
 Stop `fake_openocd.py` if it's still running (Ctrl+C), then:
 
@@ -209,7 +239,7 @@ on the first attempt with no backoff messages, or fails entirely),
 adjust the `sleep 0.1` between the two `targets` and/or the downtime
 argument to `flaky_openocd.py` - see the comments in the script.
 
-## 10. Argument validation edge cases
+## 11. Argument validation edge cases
 
 ```sh
 zig build run -- --host                    # missing flag value

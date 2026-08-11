@@ -20,6 +20,7 @@ pub const Error = error{
 pub fn commandString(subcommand: Subcommand, buf: []u8) Error![]const u8 {
     return switch (subcommand) {
         .repl => error.NotACommand,
+        .script => error.NotACommand,
         .halt => "halt",
         .resume_target => "resume",
         .targets => "targets",
@@ -161,6 +162,11 @@ test "raw passes its argument through untouched, ignoring buf entirely" {
 test "repl reports NotACommand" {
     var buf: [64]u8 = undefined;
     try std.testing.expectError(error.NotACommand, commandString(.repl, &buf));
+}
+
+test "script reports NotACommand (it drives multiple exec calls, not one)" {
+    var buf: [64]u8 = undefined;
+    try std.testing.expectError(error.NotACommand, commandString(.{ .script = .{ .path = "x" } }, &buf));
 }
 
 test "a too-small buffer reports NoSpaceLeft for parameterized commands" {

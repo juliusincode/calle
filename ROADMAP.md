@@ -56,7 +56,16 @@ is more of a changelog-plus-plan.
       text; there's no reliable success/failure signal beyond
       convention (e.g. `"0"` for many commands). Investigate whether
       OpenOCD exposes anything more structured, and otherwise document
-      the conventions calle relies on.
+      the conventions calle relies on. Related, found while testing
+      `script` mode's stop-on-failure behavior: `Transport.read`
+      returns `0` both for "no more bytes in this call" and "the
+      connection was closed" (the same ambiguity documented in
+      `transport/transport.zig`) - if a connection drops exactly while
+      waiting for a response, that response can come back as an empty
+      string rather than a visible error. Worth a real fix once this
+      item is investigated (likely: distinguish a clean protocol-level
+      end-of-response from a dead connection at the protocol layer,
+      rather than relying on `read() == 0` to mean either).
 - [x] **Connection resilience.** `session.Reconnecting(Protocol)` wraps
       a `Session` and retries once with a freshly established
       transport if a command fails (e.g. OpenOCD restarted, or a
@@ -185,9 +194,18 @@ is more of a changelog-plus-plan.
 - [ ] **Serial transport backend**, for talking to a debug adapter's
       CLI directly instead of through OpenOCD's TCP ports, following
       the same `Transport.VTable` pattern as `transport/tcp.zig`.
-- [ ] **Batch/scripting mode**: read a sequence of commands from a
-      file and execute them in order, useful for flashing/testing
-      pipelines.
+- [x] **Batch/scripting mode**: `calle script <path>` runs each line
+      of a file as a command (blank lines/`#` comments skipped), in
+      order, stopping at the first failure - deliberately not
+      "best-effort", since a flashing pipeline where an earlier step
+      silently failed but a later `flash write` ran anyway would be
+      worse than just stopping. Line parsing
+      (`src/cli/script_file.zig`) is pure and unit tested; running the
+      script lives in `main.zig`'s `runScript` and was verified
+      end-to-end (normal run, `-v` run with a completion summary,
+      missing file, and - importantly - that a mid-script failure
+      actually stops execution rather than continuing through the
+      remaining commands).
 - [ ] **Packaging**: prebuilt binaries per platform, or a
       `build.zig.zon` dependency setup so other Zig projects can pull
       calle in as a library rather than just a standalone CLI.
