@@ -297,6 +297,13 @@ second real consumer of the library API to design against.
 
 ## Testing
 
+`zig build test` covers the logic (mock-based, no network). For a
+manual, end-to-end verification checklist covering the CLI, real TCP
+connections, reconnect/backoff timing, and the config file - things
+that only show up with real bytes on a real socket - see
+[TESTING.md](TESTING.md). It uses the fake OpenOCD servers in
+`scripts/` so no real hardware or OpenOCD install is needed.
+
 `zig build test` covers:
 
 - Telnet framing: newline handling, IAC filtering, buffer overflow,
@@ -383,3 +390,9 @@ If `zig build` ever complains about the `fingerprint` field in
 `build.zig.zon`, it prints the correct value to use directly in the
 error message - just paste it in.
 
+## CI
+
+`.github/workflows/ci.yml` runs `zig build test`, `zig build`, and
+`zig fmt --check .` on every push/PR to `main`, using
+[`mlugg/setup-zig`](https://github.com/mlugg/setup-zig) to install the
+Zig version pinned in `build.zig.zon`.
