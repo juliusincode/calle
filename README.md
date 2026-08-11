@@ -389,10 +389,3 @@ that look different from what you might expect.
 If `zig build` ever complains about the `fingerprint` field in
 `build.zig.zon`, it prints the correct value to use directly in the
 error message - just paste it in.
-
-## CI
-
-`.github/workflows/ci.yml` runs `zig build test`, `zig build`, and
-`zig fmt --check .` on every push/PR to `main`, using
-[`mlugg/setup-zig`](https://github.com/mlugg/setup-zig) to install the
-Zig version pinned in `build.zig.zon`.
