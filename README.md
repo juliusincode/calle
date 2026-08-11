@@ -4,13 +4,13 @@ A modular OpenOCD client written in Zig 0.16, built primarily around
 OpenOCD's Tcl-RPC interface (port 6666 by default).
 
 **Status:** builds and passes all tests against the real Zig 0.16.0
-compiler. `zig build test` (102/102, fully mock-based, no network
+compiler. `zig build test` (110/110, fully mock-based, no network
 required) and an end-to-end smoke test of `zig build run` against a
 fake OpenOCD server (real TCP connection, `targets` / `reset halt` over
 Tcl-RPC, REPL including `quit`) both pass.
 
 ```sh
-zig build test                                    # 102/102 green, no network needed
+zig build test                                    # 110/110 green, no network needed
 zig build run -- --host 127.0.0.1 --port 6666     # interactive REPL
 
 # typed subcommands, for scripts:
@@ -338,6 +338,10 @@ that only show up with real bytes on a real socket - see
 - Config file parsing (`src/cli/config_file.zig`): host/port parsing,
   comments and blank lines ignored, whitespace trimming, and error
   cases (line without `=`, invalid port, unknown key)
+- REPL line reading (`src/cli/line_reader.zig`): normal lines, CRLF
+  stripping, EOF handling, multi-line sequences, and - the reason this
+  module exists - a regression test that an oversized line is fully
+  drained rather than leaking its remainder into the next line read
 
 The allocator-backed path (`execAlloc` / `readResponseAlloc`) has also
 been smoke-tested against a fake OpenOCD server returning a ~9 KB
@@ -377,6 +381,26 @@ references actually reaches all the way down. If you add a new
 sub-module and its tests don't show up in the `zig build test` count,
 this is almost always why.
 
+### Gotcha: `main.zig` has zero test coverage
+
+`main.zig` is a separate executable root module, not part of the
+`calle` library module - `zig build test` never touches it. A real bug
+(`LineTooLong` not draining the rest of the oversized line, so the
+leftover bytes got misread as a separate line on the next REPL prompt)
+lived there undetected until manual testing turned it up - see
+[TESTING.md](TESTING.md) and the git history around
+`src/cli/line_reader.zig` for the story.
+
+The house rule this led to: any logic in `main.zig` beyond direct I/O
+plumbing (argument parsing, config file parsing, command dispatch,
+line reading, ...) gets pulled into its own file under `src/cli/`,
+written as a pure function wherever possible, with real unit tests.
+`main.zig` itself should only ever be "glue": open a socket, read a
+byte, call into a tested function, write a byte. If you're tempted to
+add a `while` loop with actual decision-making directly in
+`main.zig`, that's usually a sign it wants to be a new `src/cli/*.zig`
+file instead.
+
 ## Toolchain notes
 
 This project targets Zig 0.16.0 (`minimum_zig_version` in
@@ -389,3 +413,10 @@ that look different from what you might expect.
 If `zig build` ever complains about the `fingerprint` field in
 `build.zig.zon`, it prints the correct value to use directly in the
 error message - just paste it in.
+
+## CI
+
+`.github/workflows/ci.yml` runs `zig build test`, `zig build`, and
+`zig fmt --check .` on every push/PR to `main`, using
+[`mlugg/setup-zig`](https://github.com/mlugg/setup-zig) to install the
+Zig version pinned in `build.zig.zon`.

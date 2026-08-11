@@ -66,7 +66,7 @@ pub fn main(init: std.process.Init) !void {
 
     const initial_transport = TcpConnectCtx.connect(&connect_ctx) catch |err| {
         std.log.err("failed to connect to {s}:{d}: {t}", .{ run.config.host, run.config.port, err });
-        return err;
+        std.process.exit(1);
     };
     var session = calle.session.ReconnectingTclSession.init(initial_transport, &connect_ctx, TcpConnectCtx.connect);
     session.max_connect_attempts = 3;
@@ -78,11 +78,11 @@ pub fn main(init: std.process.Init) !void {
         var cmd_buf: [512]u8 = undefined;
         const cmd = calle.cli.dispatch.commandString(run.subcommand, &cmd_buf) catch |err| {
             std.log.err("could not build command: {t}", .{err});
-            return err;
+            std.process.exit(1);
         };
         const response = execLogged(io, stdout, &session, gpa, cmd, run.config.verbosity) catch |err| {
             std.log.err("command failed: {t}", .{err});
-            return err;
+            std.process.exit(1);
         };
         defer gpa.free(response);
         try stdout.writeStreamingAll(io, response);
@@ -99,7 +99,14 @@ pub fn main(init: std.process.Init) !void {
 
         const line = readLine(io, stdin, &line_buf) catch |err| switch (err) {
             error.EndOfStream => break,
-            else => return err,
+            error.LineTooLong => {
+                std.log.err("line too long (max {d} bytes) - ignoring", .{line_buf.len});
+                continue;
+            },
+            else => {
+                std.log.err("failed to read input: {t}", .{err});
+                std.process.exit(1);
+            },
         };
         if (line.len == 0) continue;
         if (std.mem.eql(u8, line, "quit") or std.mem.eql(u8, line, "exit")) break;
@@ -199,25 +206,23 @@ const TcpConnectCtx = struct {
     }
 };
 
-/// Reads a line from stdin, without the trailing newline. Deliberately
-/// kept simple (byte by byte) rather than relying on a specific
-/// Io.Reader convenience method.
-fn readLine(io: std.Io, file: std.Io.File, buf: []u8) ![]const u8 {
-    var len: usize = 0;
-    var byte: [1]u8 = undefined;
+/// Adapts a real `std.Io.File` (stdin) to the `nextByte() anyerror!?u8`
+/// shape that `calle.cli.line_reader.readLine` expects, so the actual
+/// line-splitting logic (tested in src/cli/line_reader.zig) is the
+/// only thing that runs - this is just the plumbing to real I/O.
+const StdinByteSource = struct {
+    io: std.Io,
+    file: std.Io.File,
 
-    while (true) {
-        const n = try file.readStreaming(io, &.{&byte});
-        if (n == 0) {
-            if (len == 0) return error.EndOfStream;
-            break;
-        }
-        if (byte[0] == '\n') break;
-        if (byte[0] == '\r') continue;
-        if (len >= buf.len) return error.LineTooLong;
-        buf[len] = byte[0];
-        len += 1;
+    pub fn nextByte(self: StdinByteSource) anyerror!?u8 {
+        var byte: [1]u8 = undefined;
+        const n = try self.file.readStreaming(self.io, &.{&byte});
+        if (n == 0) return null;
+        return byte[0];
     }
+};
 
-    return buf[0..len];
+fn readLine(io: std.Io, file: std.Io.File, buf: []u8) ![]const u8 {
+    const source = StdinByteSource{ .io = io, .file = file };
+    return calle.cli.line_reader.readLine(source, buf);
 }

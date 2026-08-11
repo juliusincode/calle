@@ -25,6 +25,26 @@ is more of a changelog-plus-plan.
 
 ## Near-term
 
+- [x] **Clean process exit on connect/command failure.** `main()` used
+      to `return err` after logging, which made Zig dump its raw error
+      return trace (file/line stack of internal std.Io/network
+      frames) on top of the already-printed clean error message - e.g.
+      just running `calle` with nothing listening produced a full
+      stack trace instead of a one-line error. Fixed by calling
+      `std.process.exit(1)` after logging instead, consistently across
+      every failure path in `main.zig` (connect, command dispatch,
+      command execution, config file, non-EOF stdin errors).
+- [x] **`LineTooLong` didn't drain the rest of the oversized line.**
+      Found while manually testing the fix above: on a too-long REPL
+      input line, the old code returned the error without consuming
+      the remaining unread bytes up to the newline - they'd then get
+      misread as a separate, shorter "line" on the next prompt. Fixed,
+      and the line-reading logic was pulled out into
+      `src/cli/line_reader.zig` (pure, byte-source-abstracted) so it
+      has real unit test coverage now, including a regression test
+      for this exact bug - it had none before precisely because it
+      lived in `main.zig`, which `zig build test` doesn't reach.
+
 - [x] **Response buffer overflow handling.** Added `execAlloc` /
       `readResponseAlloc` (allocator-backed, growable) alongside the
       original fixed-buffer `exec` / `readResponse`. The CLI now uses
